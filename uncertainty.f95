@@ -3,20 +3,19 @@ use tableio
 use calculations
 IMPLICIT NONE
 
-integer :: i, k, ios
+integer :: i, k, w, ios
 
 ! CONSTANT
 real(8),parameter :: pi = 3.1415926535987d0
 
 ! CORRELATION INFORMATION
-integer :: length_f_upper, length_f_lower, length_s_upper, length_s_lower
+integer :: num_w, length_f_upper, length_f_lower, length_s_upper, length_s_lower
 real(8),dimension(:,:),allocatable :: f_upper, f_lower, s_upper, s_lower
 real(8) :: f_upper_point, f_lower_point, f_distr, s_upper_point, s_lower_point, s_distr
 real(8) :: weight_f, weight_s
-real(8) :: ooxtt, hlo, h2f, h2f_top, h2f_bot, F, S, Re_LP, Re_2f
 
 ! PROPERTIES
-real(8) :: P, G, hin, Tin, qpp_bar, pitch, d_o, d_i, th, k_clad, d_pellet, h_gap, H, gamma, Fz
+real(8) :: P, G, hin, Tin, qpp_bar, pitch, d_o, r_o, d_i, r_i, th, k_clad, d_pellet, h_gap, H, gamma, Fz
 real(8) :: mu_f, mu_g, cp_f, k_f, gc, J, sigma, h_f, h_g, h_fg, nu_f, nu_g, nu_fg, rho_f, rho_g, Tsat, Tsat_abs
 
 ! WEISMANN & MORE PROPERTIES/DIMENSIONS
@@ -28,11 +27,15 @@ real(8) :: q0pp, shape_max, diff_min
 real(8) :: dz
 real(8) :: search_up, search_dn, search, tol, sol_up, sol_dn
 real(8) :: lambda, He, lambda_up, lambda_dn, lambda_a_up, lambda_a_dn, lambda_b_up, lambda_b_dn
-real(8) :: int_temp, cp
+real(8) :: int_temp
+real(8) :: Tw_lo, Tw_hi, Tw_up, Tw_dn, RHS_up, RHS_dn, LHS, max_Tw
+real(8) :: ooxtt, hlo, h2f_up, h2f_dn, h2f_top, h2f_bot, F, S, Re_LP, Re_2f
+real(8) :: hc, surface_condint, center_condint, T0_hi, T0_lo, T0_up, T0_dn, k_int_up, k_int_dn
 real(8),dimension(:),allocatable :: z_mesh, shape_fun, diff_shape_fun, lambda_fun_up, lambda_fun_dn, int_lambda_fun
-real(8),dimension(:),allocatable :: qpp, hinf, Tinf, x, Tw, T0
+real(8),dimension(:),allocatable :: qpp, hinf, Tinf, x, Tw, Ts, T0, Tw_dist, T0_dist
 
-character(80) :: fname_f_upper, fname_f_lower, fname_s_upper, fname_s_lower
+character(80) :: fname_f_upper, fname_f_lower, fname_s_upper, fname_s_lower, fname_Tw, fname_Tinf, fname_qpp, fname_Ts
+character(80) :: fname_t0, fname_Twdist, fname_T0dist
 
 101 format(a)
 102 format(e12.6)
@@ -57,8 +60,10 @@ Tin = 533.063d0 ! deg_F
 qpp_bar = 144032.0d0 ! Btu/(hr*ft^2)
 pitch = 0.640d0 / 12.0d0 ! ft
 d_o = 0.493d0 / 12.0d0 ! ft
+r_o = d_o / 2.0d0
 th = 0.034d0 / 12.0d0 ! ft
-d_i = d_o - 2 * th
+d_i = d_o - 2.0d0 * th
+r_i = d_i / 2.0d0
 k_clad = 9.6d0 ! Btu/(hr*ft*R)
 d_pellet = 0.416d0 / 12.0d0 ! ft
 h_gap = 1000.0d0 ! Btu/(hr*ft^2*R)
@@ -86,7 +91,7 @@ Tsat = 549.432d0 ! deg_F
 Tsat_abs = Tsat + 459.67 ! R
 
 ! Build basic functions & meshes, etc.
-length_z = 100
+length_z = 100000
 allocate(z_mesh(length_z))
 allocate(shape_fun(length_z))
 
@@ -108,7 +113,7 @@ do i = 2,length_z-2
 	endif
 enddo
 
-tol = 1.0d-2
+tol = 1.0d-5
 search = 1.0d1
 k = length_z / 2
 allocate(lambda_fun_up(length_z))
@@ -146,8 +151,9 @@ do while (search .gt. tol)
 		k = (top + bot) / 2
 		lambda = lambda_up
 	endif
-	write(*,102) lambda
+	! write(*,102) lambda
 enddo
+write(*,'(a,e12.6)') 'lambda = ', lambda
 He = H + 2.0d0 * lambda
 
 ! Based on Weisman form for Liquid Only
@@ -161,91 +167,181 @@ allocate(qpp(length_z))
 allocate(hinf(length_z))
 allocate(Tinf(length_z))
 allocate(x(length_z))
+allocate(Ts(length_z))
+allocate(T0(length_z))
 q0pp = qpp_bar * Fz / shape_max
 do i = 2,length_z
 	qpp(i) = q0pp * ((pi * (H + lambda - z_mesh(i))) / (He)) * sin((pi * (H + lambda - z_mesh(i))) / (He))
 	call trapz(qpp,length_z,z_mesh,0.0d0,z_mesh(i),int_temp)
 	hinf(i) = hin + (1.0d0 / (mdot * gamma)) * pi * d_o * int_temp
-	tinf(i) = Tin + (1.0d0 / (mdot * cp * gamma)) * pi * d_o * int_temp
+	Tinf(i) = Tin + (1.0d0 / (mdot * cp_f * gamma)) * pi * d_o * int_temp
+	if (Tinf(i) .gt. Tsat) then
+		Tinf(i) = Tsat
+	endif
 	x(i) = (hinf(i) - h_f) / (h_fg)
 enddo
-
-
-
-
 
 
 write(*,101)
 
 
+allocate(Tw(length_z))
 
-call random_number(weight_f)
-call random_number(weight_s)
+num_w = 10000
+allocate(Tw_dist(num_w))
+allocate(T0_dist(num_w))
+do w = 1,num_w
+	write(*,'(i4)') w
+	do i = 2,length_z
+		if (x(i) .lt. 0.0d0) then
+			cycle
+		endif
+		ooxtt = (x(i) / (1 - x(i))) ** 0.9d0 * (rho_f / rho_g) ** 0.5d0 * (mu_g / mu_f) ** 0.1d0
+		if ((ooxtt .lt. f_upper(1,1)) .or. (ooxtt .lt. f_lower(1,1)) .or. &
+			(ooxtt .gt. f_upper(length_f_upper,1)) .or. (ooxtt .gt. f_lower(length_f_upper,1))) then
+			if (ooxtt .le. 0.10d0) then
+				F = 1.0d0
+			else
+				F = 2.35d0 * (ooxtt + 0.213d0) ** 0.736d0
+			endif
+		else
+			call interpolate(f_upper,length_f_upper,ooxtt,f_upper_point)
+			call interpolate(f_lower,length_f_lower,ooxtt,f_lower_point)
+			call random_number(weight_f)
+			f_distr = (f_upper_point - f_lower_point) * weight_f + f_lower_point
+			F = f_distr
+		endif
+		
+		hlo = 0.023d0 * ((G * (1 - x(i)) * De) / mu_f) ** 0.8d0 * (cp_f * mu_f / k_f) ** 0.4d0 * (k_f / De) * F
+		
+		Re_LP = ((G * (1 - x(i))) * De) / mu_f
+		Re_2f = Re_LP * F ** 1.25d0
+		
+		if ((Re_2f .lt. s_upper(1,1)) .or. (Re_2f .lt. s_lower(1,1)) .or. &
+			(Re_2f .gt. s_upper(length_s_upper,1)) .or. (Re_2f .gt. s_lower(length_s_lower,1))) then
+			S = 0.9622d0 - 0.5822d0 * atan(Re_2f / 6.18d4)
+		else
+			call interpolate(s_upper,length_s_upper,Re_2f,s_upper_point)
+			call interpolate(s_lower,length_s_lower,Re_2f,s_lower_point)
+			call random_number(weight_s)
+			s_distr = (s_upper_point - s_lower_point) * weight_s + s_lower_point
+			S = s_distr
+		endif
+		! guess
+		Tw_lo = Tinf(i)
+		Tw_hi = 6.5d2
+		Tw(i) = (Tw_lo + Tw_hi) / 2.0d0
+		search = 1.0d1
+		tol = 1.0d-6
+		k = 0
+		do while (search .gt. tol)
+			k = k + 1
+			if (k .ge. 101) then
+				! write(*,'(i12)') i
+				exit
+			endif
+			Tw_up = (Tw(i) + Tw_hi) / 2.0d0
+			Tw_dn = (Tw(i) + Tw_lo) / 2.0d0
+			h2f_top = k_f ** 0.79d0 * cp_f ** 0.45d0 * rho_f ** 0.49d0 * gc ** 0.25d0
+			h2f_bot = sigma ** 0.5d0 * mu_f ** 0.29d0 * h_fg ** 0.24d0 * rho_g ** 0.24d0
+			h2f_up = 0.00122d0 * ((h2f_top) / (h2f_bot)) * ((h_fg * J) / (Tsat * nu_fg)) ** 0.75d0 * (Tw_up - Tsat) ** 0.99 * S
+			h2f_dn = 0.00122d0 * ((h2f_top) / (h2f_bot)) * ((h_fg * J) / (Tsat * nu_fg)) ** 0.75d0 * (Tw_dn - Tsat) ** 0.99 * S
+			RHS_up = hlo * (Tw_up - Tinf(i)) + h2f_up * (Tw_up - Tsat)
+			RHS_dn = hlo * (Tw_dn - Tinf(i)) + h2f_dn * (Tw_dn - Tsat)
+			LHS = qpp(i)
+			search_up = abs(RHS_up - LHS) / LHS
+			search_dn = abs(RHS_dn - LHS) / LHS
+			if (search_dn .lt. search_up) then
+				search = search_dn
+				Tw_lo = Tw_lo
+				Tw_hi = Tw(i)
+				Tw(i) = Tw_dn
+			else
+				search = search_up
+				Tw_lo = Tw(i)
+				Tw_hi = Tw_hi
+				Tw(i) = Tw_up
+			endif
+			! write(*,102) Tw(i)
+		enddo
+		! write(*,103) k
+		
+	enddo
 
-do i = 2,length_z
-	if (x(i) .lt. 0.0d0) then
-		cycle
-	endif
-	ooxtt = (x(i) / (1 - x(i))) ** 0.9d0 * (rho_f / rho_g) ** 0.5d0 * (mu_g / mu_f) ** 0.1d0
-	write(*,102) ooxtt
-	if ((ooxtt .lt. f_upper(1,1)) .or. (ooxtt .lt. f_lower(1,1)) .or. &
-		(ooxtt .gt. f_upper(length_f_upper,1)) .or. (ooxtt .gt. f_lower(length_f_upper,1))) then
-		if (ooxtt .le. 0.10d0) then
-			F = 1.0d0
-		else
-			F = 2.35d0 * (ooxtt + 0.213d0) ** 0.736d0
-		endif
-	else
-		call interpolate(f_upper,length_f_upper,ooxtt,f_upper_point)
-		call interpolate(f_lower,length_f_lower,ooxtt,f_lower_point)
-		f_distr = (f_upper_point - f_lower_point) * weight_f + f_lower_point
-		F = f_distr
-	endif
+
+	! max_Tw = 0.0d0
+	! do i = 1,length_z
+		! if (Tw(i) .gt. max_Tw) then
+			! max_Tw = Tw(i)
+		! endif
+	! enddo
+		
+	! write(*,102) max_Tw
+	! write(*,102) Tw(max_loc)
+	! write(*,'(i12)') max_loc
+	Tw_dist(w) = Tw(max_loc)
+
 	
-	hlo = 0.023d0 * ((G * (1 - x(i)) * De) / mu_f) ** 0.8d0 * (cp_f * mu_f / k_f) ** 0.4d0 * (k_f / De) * F
-	
-	Re_LP = ((G * (1 - x(i))) * De) / mu_f
-	Re_2f = Re_LP * F ** 1.25d0
-	
-	if ((Re_2f .lt. s_upper(1,1)) .or. (Re_2f .lt. s_lower(1,1)) .or. &
-		(Re_2f .gt. s_upper(length_s_upper,1)) .or. (Re_2f .gt. s_lower(length_s_lower,1))) then
-		S = 0.9622d0 - 0.5822d0 * atan(Re_2f / 6.18d4)
-	else
-		call interpolate(s_upper,length_s_upper,Re_2f,s_upper_point)
-		call interpolate(s_lower,length_s_lower,Re_2f,s_lower_point)
-		s_distr = (s_upper_point - s_lower_point) * weight_s + s_lower_point
-		S = s_distr
-	endif
-	! guess
-	Tw_lo = Tinf(i)
-	Tw_hi = 7.0d2
-	Tw = (Tw_lo + Tw_hi) / 2.0d0
-	tol = 1.0d-3
-	do while (search .gt. tol)
-		Tw_up = (Tw + Tw_hi) / 2.0d0
-		Tw_dn = (Tw + Tw_lo) / 2.0d0
-		h2f_top = k_f ** 0.79d0 * cp_f ** 0.45d0 * rho_f ** 0.49d0 * gc ** 0.25d0
-		h2f_bot = sigma ** 0.5d0 * mu_f ** 0.29d0 * h_fg ** 0.24d0 * rho_g ** 0.24d0
-		h2f_up = 0.00122d0 * ((h2f_top) / (h2f_bot)) * ((h_fg * J) / (Tsat * nu_fg)) ** 0.75d0 * (Tw_up - Tsat) ** 0.99 * S
-		h2f_dn = 0.00122d0 * ((h2f_top) / (h2f_bot)) * ((h_fg * J) / (Tsat * nu_fg)) ** 0.75d0 * (Tw_dn - Tsat) ** 0.99 * S
-		RHS_up = hlo * (Tw_up - Tinf(i)) + h2f * (Tw_up - Tsat)
-		RHS_dn = hlo * (Tw_dn - Tinf(i)) + h2f * (Tw_dn - Tsat)
-		LHS = qpp(i)
-		search_up = abs(RHS_up - LHS) / LHS
-		search_dn = abs(RHS_dn - LHS) / LHS
-		if (search_dn .lt. search_up) then
-			search = search_dn
-			Tw_lo = Tw_lo
-			Tw_hi = Tw
-			Tw = Tw_dn
-		else
-			search = search_up
-			Tw_lo = Tw
-			Tw_hi = Tw_hi
-			Tw = Tw_up
-		endif
+	do i = 1,length_z
+		hc = qpp(i) / (Tw(i) - Tinf(i))
+		Ts(i) = Tinf(i) + qpp(i) * r_o * (1.0d0 / (h_gap * r_i) + 1.0d0 / k_clad * log(r_o / r_i) + 1.0d0 / (hc * r_o))
+		surface_condint = 3978.1d0*log((692.6d0+Ts(i)) / 692.6d0) + (6.02366d-12 / 4.0d0) * ((Ts(i) + 460d0) ** 4.0d0 - 460.0d0 ** 4.0d0)
+		center_condint = surface_condint + (qpp(i) * r_o) / 2.0d0
+		
+		T0_hi = 3.0d3
+		T0_lo = Ts(i)
+		T0(i) = (T0_hi + T0_lo) / 2.0d0
+		search = 1.0d1
+		tol = 1.0d-6
+		k = 0
+		do while (search .gt. tol)
+			k = k + 1
+			if (k .gt. 101) then
+				! write(*,'(i12)') i
+				exit
+			endif
+			T0_up = (T0(i) + T0_hi) / 2.0d0
+			T0_dn = (T0(i) + T0_lo) / 2.0d0
+			k_int_up = 3978.1d0*log((692.6d0+T0_up)/692.6d0)+(6.02366d-12 / 4.0d0) * ((T0_up + 460d0) ** 4.0d0 - 460.0d0 ** 4.0d0)
+			k_int_dn = 3978.1d0*log((692.6d0+T0_dn)/692.6d0)+(6.02366d-12 / 4.0d0) * ((T0_dn + 460d0) ** 4.0d0 - 460.0d0 ** 4.0d0)
+			search_up = abs(k_int_up - center_condint) / center_condint
+			search_dn = abs(k_int_dn - center_condint) / center_condint
+			
+			if (search_dn .lt. search_up) then
+				search = search_dn
+				T0_lo = T0_lo
+				T0_hi = T0(i)
+				T0(i) = T0_dn
+			else
+				search = search_up
+				T0_lo = T0(i)
+				T0_hi = T0_hi
+				T0(i) = T0_up
+			endif
+				
+		enddo
+		
 	enddo
 	
+	T0_dist(w) = T0(max_loc)
+	
 enddo
+
+
+! fname_qpp = 'qpp.csv'
+! call csvout(fname_qpp,z_mesh,qpp,length_z)
+! fname_Tinf = 'Tinf.csv'
+! call csvout(fname_Tinf,z_mesh,Tinf,length_z)
+! fname_tw = 'tw.csv'
+! call csvout(fname_tw,z_mesh,Tw,length_z)
+! fname_ts = 'ts.csv'
+! call csvout(fname_ts,z_mesh,Ts,length_z)
+! fname_t0 = 't0.csv'
+! call csvout(fname_t0,z_mesh,T0,length_z)
+
+fname_Twdist = 'Twdist.csv'
+call listout(fname_Twdist,Tw_dist,num_w)
+fname_T0dist = 'T0dist.csv'
+call listout(fname_T0dist,T0_dist,num_w)
 
 endprogram uncertainty
