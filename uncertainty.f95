@@ -154,6 +154,7 @@ do while (search .gt. tol)
 	! write(*,102) lambda
 enddo
 write(*,'(a,e12.6)') 'lambda = ', lambda
+write(*,'(a,e12.6)') 'max_loc =',z_mesh(max_loc)
 He = H + 2.0d0 * lambda
 
 ! Based on Weisman form for Liquid Only

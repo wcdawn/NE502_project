@@ -32,8 +32,8 @@ subroutine interpolate(table,length,x,y)
 		if (table(i,1) .gt. x) then
 			i_hi = i
 			i_lo = i - 1
-			r_hi = table(i_hi,1)
-			r_lo = table(i_lo,1)
+			r_hi = table(i_hi,2)
+			r_lo = table(i_lo,2)
 			exit
 		endif
 	enddo
