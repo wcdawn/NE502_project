@@ -1,0 +1,9 @@
+William@William-PC ~/NE502
+$ ./uncertainty.exe
+lambda = 0.309668E+01
+
+   1
+Tw
+0.573605E+03
+T0
+0.188227E+04
