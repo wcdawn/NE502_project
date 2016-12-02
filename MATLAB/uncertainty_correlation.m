@@ -1,25 +1,5 @@
 clear
 
-% Take data from files containing points for correlations in F & S
-fname_f_upper = 'f_upper.csv';
-fname_f_lower = 'f_lower.csv';
-fname_s_upper = 's_upper.csv';
-fname_s_lower = 's_lower.csv';
-
-fid_f_upper = fopen(fname_f_upper,'r');
-fid_f_lower = fopen(fname_f_lower,'r');
-fid_s_upper = fopen(fname_s_upper,'r');
-fid_s_lower = fopen(fname_s_lower,'r');
-
-f_upper = fscanf(fid_f_upper,'%e,%e',[2 Inf]);
-f_lower = fscanf(fid_f_lower,'%e,%e',[2 Inf]);
-s_upper = fscanf(fid_s_upper,'%e,%e',[2 Inf]);
-s_lower = fscanf(fid_s_lower,'%e,%e',[2 Inf]);
-
-fclose(fid_f_upper);
-fclose(fid_f_lower);
-fclose(fid_s_upper);
-fclose(fid_s_lower);
 
 % Data from Doster
 P = 1040; % psia
@@ -91,6 +71,9 @@ lambda = vpasolve(eqn,lambda);
 lambda = double(lambda);
 He = H + 2 * lambda;
 q0pp = qpp_bar * Fz / shape_max;
+syms z
+eqn = 0 == diff(q0pp * ((pi * (H + lambda - z)) / (He)) * sin((pi * (H + lambda - z)) / (He)),z);
+zmax = double(vpasolve(eqn,z));
 
 % Based on Weisman form for Liquid Only
 xC = 0.042 * (pitch / d_o) - 0.024;

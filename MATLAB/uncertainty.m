@@ -2,7 +2,7 @@ clear
 
 % Take data from files containing points for correlations in F & S
 fname_f_upper = 'f_upper.csv';
-fname_f_lower = 'f_lower.csv';
+fname_f_lower = 'f_lower.*/csv';
 fname_s_upper = 's_upper.csv';
 fname_s_lower = 's_lower.csv';
 
@@ -59,31 +59,11 @@ rho_g = 1 / nu_g;
 Tsat = 549.432; % deg_F
 Tsat_abs = Tsat + 459.67; % R 
 
-length_z = 1e6;
-z_mesh = linspace(0,H,length_z);
-
-% shape_fun = zeros(length_z,1);
-% for i = 1:length(z_mesh)
-	% shape_fun(i) = ((pi * (H - z_mesh(i))) / (H)) * sin((pi * (H - z_mesh(i))) / (H));
-% end
-% diff_shape_fun = diff(shape_fun);
-% max_loc = 0;
-% diff_min = 10;
-% shape_max = 0;
-% for i = 2:((length(z_mesh) - 2))
-	% if (abs(diff_shape_fun(i))) < diff_min 
-		% diff_min = diff_shape_fun(i);
-		% max_loc = i;
-		% shape_max = shape_fun(i);
-	% end
-% end
-% zmax = z_mesh(max_loc);
-
 % Normalization, et cetera
 syms z
 eqn = 0 == diff(((pi * (H - z)) / (H)) * sin((pi * (H - z)) / (H)),z);
-zmax = double(vpasolve(eqn,z));
-shape_max = ((pi * (H - zmax)) / (H)) * sin((pi * (H - zmax)) / (H));
+zmax_temp = double(vpasolve(eqn,z));
+shape_max = ((pi * (H - zmax_temp)) / (H)) * sin((pi * (H - zmax_temp)) / (H));
 
 syms lambda z
 eqn = Fz == H * shape_max / int(((pi * (H + lambda - z)) / (H + 2 * lambda)) * sin((pi * (H + lambda - z)) / (H + 2 * lambda)),z,0,H);
@@ -91,9 +71,11 @@ lambda = vpasolve(eqn,lambda);
 lambda = double(lambda);
 He = H + 2 * lambda;
 q0pp = qpp_bar * Fz / shape_max;
+syms z
+eqn = 0 == diff(q0pp * ((pi * (H + lambda - z)) / (He)) * sin((pi * (H + lambda - z)) / (He)),z);
+zmax = double(vpasolve(eqn,z));
 
-% Based on Weisman form for Liquid Only
-xC = 0.042 * (pitch / d_o) - 0.024;
+% Geometry information
 Ax = pitch^2 - (pi * d_o^2) / 4;
 Pw = pi * d_o;
 De = (4 * Ax) / Pw;
@@ -156,12 +138,12 @@ end
 
 close all
 figure(1)
-histogram(Tw_dist,100)
+histogram(Tw_dist,50)
 title('T_W Probability Distribution')
 xlabel('Temperature [°F]')
 ylabel('Frequency')
 figure(2)
-histogram(T0_dist,100)
+histogram(T0_dist,50)
 title('T_{CL} Probability Distribution')
 xlabel('Temperature [°F]')
 ylabel('Frequency')
